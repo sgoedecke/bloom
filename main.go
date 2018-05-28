@@ -2,35 +2,34 @@ package main
 
 import (
 	"fmt"
-	"github.com/golang-collections/go-datastructures/bitarray" // this gives us an array of bits: [0, 0, 1, 0...]
-	"github.com/spaolacci/murmur3"                             // this gives us the ability to create hashing functions that will turn our data into a uint64
+	"strconv"
 )
 
 // A bloom filter is an array of bits, a function for adding elements, and a function for testing if an element has probably been added
 type BloomFilter struct {
-	bits bitarray.BitArray
+	bits [99]bool // Every bloom filter begins with every bit set to 0: [0,0,0,0,0...]
 }
 
-func NewBloomFilter() *BloomFilter {
-	// A sparse bit array has worse perf but saves us having to worry about the output of our hashing functions overflowing
-	// the length of the array of bits
-	ba := bitarray.NewSparseBitArray() // Every bloom filter begins with every bit set to 0: [0,0,0,0,0...]
-	return &BloomFilter{ba}
-}
-
-// We need a function that takes an element and returns two positions
+// We need a function that takes an element and returns two positions between 0 and 99
 // This function must be deterministic: every time you run it with the same data, you have to get the same positions
-func (f *BloomFilter) getPositions(data []byte) []uint64 {
-	p1 := murmur3.Sum64WithSeed(data, uint32(1)) // we use a hashing function with two different seeds
-	p2 := murmur3.Sum64WithSeed(data, uint32(2))
-	return []uint64{p1, p2}
+// In real life you'd use a proper hashing function, but here we just hack up our own
+func (f *BloomFilter) getPositions(data []byte) []int {
+	p1 := 0
+	p2 := 0
+	for _, b := range data {
+		p1 += int(b >> 1)
+		p2 += int(b >> 2)
+	}
+	p1, _ = strconv.Atoi(strconv.Itoa(p1)[:2])
+	p2, _ = strconv.Atoi(strconv.Itoa(p2)[:2])
+	return []int{p1, p2}
 }
 
 // Adding an element to a bloom filter means setting a fixed number of bits to 1 in the bit array
 // Bits may never be set back to 0, under any circumstances
 func (f *BloomFilter) Set(data []byte) *BloomFilter {
 	for _, pos := range f.getPositions(data) {
-		f.bits.SetBit(pos)
+		f.bits[pos] = true
 	}
 	return f
 }
@@ -42,7 +41,7 @@ func (f *BloomFilter) Set(data []byte) *BloomFilter {
 // if adding other elements has flipped the same bits
 func (f *BloomFilter) Test(data []byte) bool {
 	for _, pos := range f.getPositions(data) {
-		hasBit, _ := f.bits.GetBit(pos)
+		hasBit := f.bits[pos]
 		if !hasBit {
 			return false
 		}
@@ -65,8 +64,8 @@ type ArrayWithBloomFilter struct {
 
 func NewArrayWithBloomFilter() *ArrayWithBloomFilter {
 	arr := make([]string, 0)
-	bf := NewBloomFilter()
-	return &ArrayWithBloomFilter{arr, bf}
+	bf := BloomFilter{}
+	return &ArrayWithBloomFilter{arr, &bf}
 }
 
 func (a *ArrayWithBloomFilter) Set(value string) {
